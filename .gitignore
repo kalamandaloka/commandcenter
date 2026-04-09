@@ -21,5 +21,7 @@ yarn-error.log*
 *.sqlite
 *.sqlite3
 
+*.tsbuildinfo
+
 .turbo/
 .vercel/

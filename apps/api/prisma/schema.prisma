@@ -1,0 +1,339 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         String
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  scenarioRunsStarted ScenarioRun[] @relation("ScenarioRunStartedBy")
+  missionsCreated     Mission[]     @relation("MissionCreatedBy")
+  missionsApproved    Mission[]     @relation("MissionApprovedBy")
+  ordersIssued        Order[]       @relation("OrderIssuedBy")
+  decisionLogs        DecisionLog[]
+
+  @@map("users")
+}
+
+model Scenario {
+  id           String        @id @default(uuid())
+  name         String
+  slug         String        @unique
+  description  String?
+  areaName     String?       @map("area_name")
+  scenarioType String?       @map("scenario_type")
+  initialPhase Int           @default(1) @map("initial_phase")
+  totalPhases  Int           @default(1) @map("total_phases")
+  status       String        @default("active")
+  isTemplate   Boolean       @default(true) @map("is_template")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  phases        ScenarioPhase[]
+  units         Unit[]
+  logisticsNodes LogisticsNode[]
+  injects       EventInject[]
+  runs          ScenarioRun[]
+
+  @@map("scenarios")
+}
+
+model ScenarioPhase {
+  id                String   @id @default(uuid())
+  scenarioId        String   @map("scenario_id")
+  phaseNumber       Int      @map("phase_number")
+  name              String
+  description       String?
+  startOffsetMinutes Int     @default(0) @map("start_offset_minutes")
+  endOffsetMinutes   Int     @default(0) @map("end_offset_minutes")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  scenario Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@unique([scenarioId, phaseNumber])
+  @@map("scenario_phases")
+}
+
+model ScenarioRun {
+  id               String           @id @default(uuid())
+  scenarioId       String           @map("scenario_id")
+  startedByUserId  String?          @map("started_by_user_id")
+  currentPhase     Int              @default(1) @map("current_phase")
+  simulationStatus String @default("not_started") @map("simulation_status")
+  simulationSpeed  Int              @default(1) @map("simulation_speed")
+  startedAt        DateTime?        @map("started_at")
+  pausedAt         DateTime?        @map("paused_at")
+  endedAt          DateTime?        @map("ended_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  scenario  Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  startedBy User?    @relation("ScenarioRunStartedBy", fields: [startedByUserId], references: [id])
+
+  missions         Mission[]
+  orders           Order[]
+  threats          Threat[]
+  logisticsMissions LogisticsMission[]
+  eventLogs        EventLog[]
+  decisionLogs     DecisionLog[]
+  aarReports       AARReport[]
+
+  @@index([scenarioId])
+  @@map("scenario_runs")
+}
+
+model Unit {
+  id             String     @id @default(uuid())
+  scenarioId     String     @map("scenario_id")
+  name           String
+  code           String
+  branch         String
+  unitType       String?    @map("unit_type")
+  category       String?
+  readinessScore Int        @default(80) @map("readiness_score")
+  supplyScore    Int        @default(80) @map("supply_score")
+  moraleScore    Int        @default(80) @map("morale_score")
+  xCoord         Float      @map("x_coord")
+  yCoord         Float      @map("y_coord")
+  heading        Float? 
+  parentCommand  String?    @map("parent_command")
+  status         String @default("idle")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  scenario Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  missionUnits MissionUnit[]
+  ordersTargeted Order[] @relation("OrderTargetUnit")
+
+  @@unique([scenarioId, code])
+  @@index([scenarioId, branch])
+  @@map("units")
+}
+
+model Mission {
+  id             String       @id @default(uuid())
+  scenarioRunId  String       @map("scenario_run_id")
+  name           String
+  missionType    String  @map("mission_type")
+  objective      String?
+  priority       Int          @default(3)
+  status         String @default("draft")
+  phaseNumber    Int          @default(1) @map("phase_number")
+  plannedStartTime DateTime?  @map("planned_start_time")
+  plannedEndTime   DateTime?  @map("planned_end_time")
+  actualStartTime  DateTime?  @map("actual_start_time")
+  actualEndTime    DateTime?  @map("actual_end_time")
+  createdByUserId  String?    @map("created_by_user_id")
+  approvedByUserId String?    @map("approved_by_user_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  scenarioRun ScenarioRun @relation(fields: [scenarioRunId], references: [id], onDelete: Cascade)
+  createdBy   User?       @relation("MissionCreatedBy", fields: [createdByUserId], references: [id])
+  approvedBy  User?       @relation("MissionApprovedBy", fields: [approvedByUserId], references: [id])
+
+  missionUnits MissionUnit[]
+  orders       Order[]
+
+  @@index([scenarioRunId, status])
+  @@map("missions")
+}
+
+model MissionUnit {
+  id          String   @id @default(uuid())
+  missionId   String   @map("mission_id")
+  unitId      String   @map("unit_id")
+  assignedRole String? @map("assigned_role")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  mission Mission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  unit    Unit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([missionId, unitId])
+  @@map("mission_units")
+}
+
+model Order {
+  id             String        @id @default(uuid())
+  scenarioRunId  String        @map("scenario_run_id")
+  missionId      String?       @map("mission_id")
+  issuedByUserId String?       @map("issued_by_user_id")
+  targetUnitId   String?       @map("target_unit_id")
+  orderType      String     @map("order_type")
+  priority       Int           @default(3)
+  approvalStatus String @default("draft") @map("approval_status")
+  executionStatus String @default("not_started") @map("execution_status")
+  detailsJson    String?       @map("details_json")
+  issuedAt       DateTime?     @map("issued_at")
+  approvedAt     DateTime?     @map("approved_at")
+  executedAt     DateTime?     @map("executed_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  scenarioRun ScenarioRun @relation(fields: [scenarioRunId], references: [id], onDelete: Cascade)
+  mission     Mission?    @relation(fields: [missionId], references: [id], onDelete: SetNull)
+  issuedBy    User?       @relation("OrderIssuedBy", fields: [issuedByUserId], references: [id])
+  targetUnit  Unit?       @relation("OrderTargetUnit", fields: [targetUnitId], references: [id])
+
+  @@index([scenarioRunId, approvalStatus, executionStatus])
+  @@map("orders")
+}
+
+model Threat {
+  id            String     @id @default(uuid())
+  scenarioRunId String     @map("scenario_run_id")
+  name          String
+  threatType    String @map("threat_type")
+  severity      Int        @default(3)
+  confidence    Int        @default(50)
+  xCoord        Float      @map("x_coord")
+  yCoord        Float      @map("y_coord")
+  status        String? 
+  metadataJson  String?    @map("metadata_json")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  scenarioRun ScenarioRun @relation(fields: [scenarioRunId], references: [id], onDelete: Cascade)
+
+  @@index([scenarioRunId, threatType])
+  @@map("threats")
+}
+
+model LogisticsNode {
+  id           String          @id @default(uuid())
+  scenarioId   String          @map("scenario_id")
+  name         String
+  nodeType     String @map("node_type")
+  xCoord       Float           @map("x_coord")
+  yCoord       Float           @map("y_coord")
+  status       String?
+  fuelStock    Int             @default(0) @map("fuel_stock")
+  ammoStock    Int             @default(0) @map("ammo_stock")
+  rationStock  Int             @default(0) @map("ration_stock")
+  medicalStock Int             @default(0) @map("medical_stock")
+  spareStock   Int             @default(0) @map("spare_stock")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  scenario Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  fromMissions LogisticsMission[] @relation("LogisticsFromNode")
+  toMissions   LogisticsMission[] @relation("LogisticsToNode")
+
+  @@index([scenarioId, nodeType])
+  @@map("logistics_nodes")
+}
+
+model LogisticsMission {
+  id            String        @id @default(uuid())
+  scenarioRunId String        @map("scenario_run_id")
+  fromNodeId    String        @map("from_node_id")
+  toNodeId      String        @map("to_node_id")
+  transportMode String @map("transport_mode")
+  status        String?
+  fuelAmount    Int           @default(0) @map("fuel_amount")
+  ammoAmount    Int           @default(0) @map("ammo_amount")
+  rationAmount  Int           @default(0) @map("ration_amount")
+  medicalAmount Int           @default(0) @map("medical_amount")
+  spareAmount   Int           @default(0) @map("spare_amount")
+  etaMinutes    Int           @default(0) @map("eta_minutes")
+  launchedAt    DateTime?     @map("launched_at")
+  completedAt   DateTime?     @map("completed_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  scenarioRun ScenarioRun   @relation(fields: [scenarioRunId], references: [id], onDelete: Cascade)
+  fromNode    LogisticsNode @relation("LogisticsFromNode", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode      LogisticsNode @relation("LogisticsToNode", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@index([scenarioRunId])
+  @@map("logistics_missions")
+}
+
+model EventInject {
+  id                 String     @id @default(uuid())
+  scenarioId          String     @map("scenario_id")
+  name               String
+  injectType         String  @map("inject_type")
+  triggerType        String @map("trigger_type")
+  triggerOffsetMinutes Int       @default(0) @map("trigger_offset_minutes")
+  isEnabled          Boolean     @default(true) @map("is_enabled")
+  description        String?
+  effectJson         String?     @map("effect_json")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  scenario Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@index([scenarioId, triggerType])
+  @@map("event_injects")
+}
+
+model EventLog {
+  id            String        @id @default(uuid())
+  scenarioRunId String        @map("scenario_run_id")
+  eventType     String        @map("event_type")
+  title         String
+  description   String?
+  severity      String @default("info")
+  sourceType    String?       @map("source_type")
+  sourceId      String?       @map("source_id")
+  payloadJson   String?       @map("payload_json")
+  occurredAt    DateTime      @default(now()) @map("occurred_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  scenarioRun ScenarioRun @relation(fields: [scenarioRunId], references: [id], onDelete: Cascade)
+
+  @@index([scenarioRunId, occurredAt])
+  @@map("event_logs")
+}
+
+model DecisionLog {
+  id            String   @id @default(uuid())
+  scenarioRunId String   @map("scenario_run_id")
+  userId        String   @map("user_id")
+  decisionType  String   @map("decision_type")
+  title         String
+  description   String?
+  impactSummary String?  @map("impact_summary")
+  payloadJson   String?  @map("payload_json")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  scenarioRun ScenarioRun @relation(fields: [scenarioRunId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([scenarioRunId, createdAt])
+  @@map("decision_logs")
+}
+
+model AARReport {
+  id                String   @id @default(uuid())
+  scenarioRunId      String   @map("scenario_run_id")
+  title             String
+  summary           String?
+  objectiveScore    Int      @default(0) @map("objective_score")
+  coordinationScore Int      @default(0) @map("coordination_score")
+  logisticsScore    Int      @default(0) @map("logistics_score")
+  responseTimeScore Int      @default(0) @map("response_time_score")
+  recommendationsJson String?  @map("recommendations_json")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  scenarioRun ScenarioRun @relation(fields: [scenarioRunId], references: [id], onDelete: Cascade)
+
+  @@index([scenarioRunId])
+  @@map("aar_reports")
+}
